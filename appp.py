@@ -337,10 +337,13 @@ def plot_chart_interactive_dark(game_state: dict) -> go.Figure:
     fig.add_hline(y=80, line_dash="dash", line_color="red", row=3, col=1)
     fig.add_hline(y=20, line_dash="dash", line_color="green", row=3, col=1)
     fig.update_yaxes(range=[0, 100], row=3, col=1)
+    
+    # Enhanced interactivity: enable scroll zoom and pan mode
     fig.update_layout(
         template="plotly_dark",
         xaxis_rangeslider_visible=False,
         hovermode="x unified",
+        dragmode="pan",
         margin=dict(l=10, r=10, t=30, b=10),
         height=700,
         barmode="overlay"
@@ -413,7 +416,7 @@ def process_short(game_state: dict, shares: int):
         return "Error: No current price."
     if game_state["shares"] > 0:
         return "You hold a long position. Sell long shares first before shorting."
-    # When shorting, do not update balance so that covering with no price change yields zero profit.
+    # When shorting, do not update balance
     if game_state["shares"] == 0:
         game_state["shares"] = -shares
         game_state["avg_cost"] = price
@@ -442,8 +445,10 @@ def process_cover(game_state: dict, shares: int):
         return "No short position to cover."
     if shares > abs(game_state["shares"]):
         return "Cannot cover more than your short position."
-    # Profit from covering = (short entry price - cover price) * shares
-    profit = round((game_state["avg_cost"] - price) * shares, 2)
+    # Calculate profit with tolerance to avoid rounding issues
+    diff = game_state["avg_cost"] - price
+    profit = 0 if abs(diff) < 1e-6 else round(diff * shares, 2)
+    # Update balance only by profit
     game_state["balance"] += profit
     game_state["shares"] += shares  # moving towards 0
     if game_state["shares"] == 0:
@@ -543,8 +548,15 @@ if st.session_state["page"] == "Game":
         if gs["step_count"] >= gs["max_steps"]:
             st.error("Game Over: Maximum candle clicks reached.")
         
+        # Configure interactivity options for Plotly
+        config = {
+            'scrollZoom': True,
+            'displayModeBar': True,
+            'displaylogo': False
+        }
         fig = plot_chart_interactive_dark(gs)
-        st.plotly_chart(fig, use_container_width=True)
+        fig.update_layout(dragmode="pan")  # Set default drag mode to pan
+        st.plotly_chart(fig, use_container_width=True, config=config)
         
         if st.session_state["trade_history"]:
             st.subheader("Trade History")
