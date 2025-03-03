@@ -491,14 +491,20 @@ if start_button:
     st.session_state["trade_history"] = []
 
 if next_candle_button:
-    if st.session_state["game_state"]:
+    if st.session_state.get("game_state") is not None and st.session_state["game_state"].get("df") is not None:
         df = st.session_state["game_state"]["df"]
-        max_index = len(df)
-        st.session_state["game_state"]["current_index"] = min(
-            st.session_state["game_state"]["current_index"] + 1, max_index
-        )
-        st.session_state["game_state"]["step_count"] += 1
-        st.experimental_rerun()
+        if not df.empty:
+            max_index = len(df)
+            st.session_state["game_state"]["current_index"] = min(
+                st.session_state["game_state"]["current_index"] + 1, max_index
+            )
+            st.session_state["game_state"]["step_count"] += 1
+        else:
+            st.error("The data is empty. Please restart the game.")
+    else:
+        st.error("Game state is not initialized. Please start a new game.")
+    st.experimental_rerun()
+
 
 if buy_long_button:
     if st.session_state["game_state"]:
