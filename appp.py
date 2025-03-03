@@ -40,7 +40,12 @@ if st.sidebar.button("Leaderboard"):
 st.sidebar.header("Controls")
 window_input = st.sidebar.number_input("Simulation Window (days)", min_value=10, max_value=100, value=30, step=1)
 start_button = st.sidebar.button("Start New Game (Random Stock)")
-next_stock_button = st.sidebar.button("Next Stock")
+
+# Next Stock button: disable if a position is open (shares ≠ 0)
+if st.session_state.get("game_state") is not None and st.session_state["game_state"].get("shares", 0) != 0:
+    next_stock_button = st.sidebar.button("Next Stock", disabled=True)
+else:
+    next_stock_button = st.sidebar.button("Next Stock")
 
 # Long/Short operations
 buy_long = st.sidebar.number_input("Buy Long Shares", min_value=1, value=10, step=1)
@@ -53,8 +58,10 @@ short_button = st.sidebar.button("Short")
 cover_button = st.sidebar.button("Cover")
 
 # Disable Next Candle if game is over (if on Game page)
-if (st.session_state.get("game_state") is not None and 
-    st.session_state["game_state"].get("step_count", 0) >= st.session_state["game_state"].get("max_steps", 0)):
+if (
+    st.session_state.get("game_state") is not None and 
+    st.session_state["game_state"].get("step_count", 0) >= st.session_state["game_state"].get("max_steps", 0)
+):
     next_candle_button = st.sidebar.button("Next Candle", disabled=True)
 else:
     next_candle_button = st.sidebar.button("Next Candle")
@@ -66,7 +73,7 @@ with st.sidebar.expander("How to Use This Simulator"):
     **Instructions:**
     
     - **Start New Game:** A random stock is chosen from a list of 100 volatile tickers.
-    - **Next Stock:** Switch to a new random stock without resetting your balance or trade history.
+    - **Next Stock:** Switch to a new random stock (only allowed if no open position).
     - **Buy Long/Sell Long:** For entering/exiting long positions.
     - **Short/Cover:** For initiating/increasing short positions and covering them.
     - **Next Candle:** Advance the simulation one day at a time (up to 50 moves).
@@ -335,12 +342,12 @@ def plot_chart_interactive_dark(game_state: dict) -> go.Figure:
     fig.add_hline(y=20, line_dash="dash", line_color="green", row=3, col=1)
     fig.update_yaxes(range=[0, 100], row=3, col=1)
     
-    # Enhanced interactivity: enable scroll zoom and pan mode (touch-friendly)
+    # Enhanced interactivity for touch: enable scroll zoom, responsive mode, and pan drag mode
     config = {
         'scrollZoom': True,
         'displayModeBar': True,
         'displaylogo': False,
-        'responsive': True  # Makes the chart responsive to window size changes
+        'responsive': True
     }
     fig.update_layout(
         template="plotly_dark",
@@ -419,7 +426,6 @@ def process_short(game_state: dict, shares: int):
         return "Error: No current price."
     if game_state["shares"] > 0:
         return "You hold a long position. Sell long shares first before shorting."
-    # When shorting, do not update balance so that covering with no price change yields zero profit.
     if game_state["shares"] == 0:
         game_state["shares"] = -shares
         game_state["avg_cost"] = price
@@ -448,12 +454,10 @@ def process_cover(game_state: dict, shares: int):
         return "No short position to cover."
     if shares > abs(game_state["shares"]):
         return "Cannot cover more than your short position."
-    # Calculate profit: (short entry price - cover price) * shares.
     diff = game_state["avg_cost"] - price
     profit = 0 if abs(diff) < 1e-6 else round(diff * shares, 2)
-    # Update balance by profit
     game_state["balance"] += profit
-    game_state["shares"] += shares  # moving towards 0
+    game_state["shares"] += shares
     if game_state["shares"] == 0:
         game_state["avg_cost"] = 0.0
     msg = f"Covered {shares} shares at ${price:.2f}, profit: ${profit:.2f}."
