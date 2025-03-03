@@ -41,7 +41,7 @@ st.sidebar.header("Controls")
 window_input = st.sidebar.number_input("Simulation Window (days)", min_value=10, max_value=100, value=30, step=1)
 start_button = st.sidebar.button("Start New Game (Random Stock)")
 
-# Next Stock button: disable if a position is open (shares ≠ 0)
+# Next Stock button: only enabled if no open position
 if st.session_state.get("game_state") is not None and st.session_state["game_state"].get("shares", 0) != 0:
     next_stock_button = st.sidebar.button("Next Stock", disabled=True)
 else:
@@ -58,10 +58,8 @@ short_button = st.sidebar.button("Short")
 cover_button = st.sidebar.button("Cover")
 
 # Disable Next Candle if game is over (if on Game page)
-if (
-    st.session_state.get("game_state") is not None and 
-    st.session_state["game_state"].get("step_count", 0) >= st.session_state["game_state"].get("max_steps", 0)
-):
+if (st.session_state.get("game_state") is not None and 
+    st.session_state["game_state"].get("step_count", 0) >= st.session_state["game_state"].get("max_steps", 0)):
     next_candle_button = st.sidebar.button("Next Candle", disabled=True)
 else:
     next_candle_button = st.sidebar.button("Next Candle")
@@ -73,7 +71,7 @@ with st.sidebar.expander("How to Use This Simulator"):
     **Instructions:**
     
     - **Start New Game:** A random stock is chosen from a list of 100 volatile tickers.
-    - **Next Stock:** Switch to a new random stock (only allowed if no open position).
+    - **Next Stock:** Switch to a new random stock without resetting your balance or trade history.
     - **Buy Long/Sell Long:** For entering/exiting long positions.
     - **Short/Cover:** For initiating/increasing short positions and covering them.
     - **Next Candle:** Advance the simulation one day at a time (up to 50 moves).
@@ -257,6 +255,10 @@ def plot_chart_interactive_dark(game_state: dict) -> go.Figure:
     df_part["Volume_MA_8"] = df_part["Volume"].rolling(window=8).mean()
     df_part["MFI"] = compute_MFI(df_part)
     
+    # Fill any NaN values so lines extend to chart edges
+    df_part.fillna(method="ffill", inplace=True)
+    df_part.fillna(method="bfill", inplace=True)
+    
     df_part["Volume_Up"] = df_part.apply(lambda row: row["Volume"] if row["Close"] >= row["Open"] else 0, axis=1)
     df_part["Volume_Down"] = df_part.apply(lambda row: row["Volume"] if row["Close"] < row["Open"] else 0, axis=1)
     
@@ -342,7 +344,7 @@ def plot_chart_interactive_dark(game_state: dict) -> go.Figure:
     fig.add_hline(y=20, line_dash="dash", line_color="green", row=3, col=1)
     fig.update_yaxes(range=[0, 100], row=3, col=1)
     
-    # Enhanced interactivity for touch: enable scroll zoom, responsive mode, and pan drag mode
+    # Enhanced interactivity: enable scroll zoom and pan (touch friendly)
     config = {
         'scrollZoom': True,
         'displayModeBar': True,
