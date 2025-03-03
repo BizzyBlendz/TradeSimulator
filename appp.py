@@ -53,11 +53,8 @@ short_button = st.sidebar.button("Short")
 cover_button = st.sidebar.button("Cover")
 
 # Disable Next Candle if game is over (if on Game page)
-if (
-    st.session_state.get("game_state") is not None 
-    and st.session_state["game_state"].get("step_count", 0) 
-        >= st.session_state["game_state"].get("max_steps", 0)
-):
+if (st.session_state.get("game_state") is not None and 
+    st.session_state["game_state"].get("step_count", 0) >= st.session_state["game_state"].get("max_steps", 0)):
     next_candle_button = st.sidebar.button("Next Candle", disabled=True)
 else:
     next_candle_button = st.sidebar.button("Next Candle")
@@ -338,7 +335,13 @@ def plot_chart_interactive_dark(game_state: dict) -> go.Figure:
     fig.add_hline(y=20, line_dash="dash", line_color="green", row=3, col=1)
     fig.update_yaxes(range=[0, 100], row=3, col=1)
     
-    # Enhanced interactivity: enable scroll zoom and set drag mode to pan
+    # Enhanced interactivity: enable scroll zoom and pan mode (touch-friendly)
+    config = {
+        'scrollZoom': True,
+        'displayModeBar': True,
+        'displaylogo': False,
+        'responsive': True  # Makes the chart responsive to window size changes
+    }
     fig.update_layout(
         template="plotly_dark",
         xaxis_rangeslider_visible=False,
@@ -416,7 +419,7 @@ def process_short(game_state: dict, shares: int):
         return "Error: No current price."
     if game_state["shares"] > 0:
         return "You hold a long position. Sell long shares first before shorting."
-    # When shorting, we do not update balance so that covering with no price change yields zero profit.
+    # When shorting, do not update balance so that covering with no price change yields zero profit.
     if game_state["shares"] == 0:
         game_state["shares"] = -shares
         game_state["avg_cost"] = price
@@ -445,10 +448,12 @@ def process_cover(game_state: dict, shares: int):
         return "No short position to cover."
     if shares > abs(game_state["shares"]):
         return "Cannot cover more than your short position."
-    # Profit from covering = (short entry price - cover price) * shares
-    profit = round((game_state["avg_cost"] - price) * shares, 2)
+    # Calculate profit: (short entry price - cover price) * shares.
+    diff = game_state["avg_cost"] - price
+    profit = 0 if abs(diff) < 1e-6 else round(diff * shares, 2)
+    # Update balance by profit
     game_state["balance"] += profit
-    game_state["shares"] += shares  # moving toward 0
+    game_state["shares"] += shares  # moving towards 0
     if game_state["shares"] == 0:
         game_state["avg_cost"] = 0.0
     msg = f"Covered {shares} shares at ${price:.2f}, profit: ${profit:.2f}."
@@ -489,35 +494,50 @@ if start_button:
     st.session_state["trade_history"] = []
 
 if next_candle_button:
-    if st.session_state["game_state"]:
+    if st.session_state.get("game_state") is None:
+        st.error("Game state is not initialized. Please start a new game.")
+    elif st.session_state["game_state"].get("df") is None:
+        st.error("Game state is missing data. Please restart the game.")
+    else:
         df = st.session_state["game_state"]["df"]
-        max_index = len(df)
-        st.session_state["game_state"]["current_index"] = min(
-            st.session_state["game_state"]["current_index"] + 1, max_index
-        )
-        st.session_state["game_state"]["step_count"] += 1
-        try:
-            st.experimental_rerun()
-        except AttributeError:
-            st.write("Page will refresh on next interaction.")
-        
+        if df.empty:
+            st.error("The data is empty. Please restart the game.")
+        else:
+            max_index = len(df)
+            st.session_state["game_state"]["current_index"] = min(
+                st.session_state["game_state"]["current_index"] + 1, max_index
+            )
+            st.session_state["game_state"]["step_count"] += 1
+            try:
+                st.experimental_rerun()
+            except Exception:
+                st.write("Page will refresh on next interaction.")
+                
 if buy_long_button:
-    if st.session_state["game_state"]:
+    if st.session_state.get("game_state") is None:
+        st.error("Game state is not initialized. Please start a new game.")
+    else:
         msg = process_buy_long(st.session_state["game_state"], int(buy_long))
         st.sidebar.success(msg)
 
 if sell_long_button:
-    if st.session_state["game_state"]:
+    if st.session_state.get("game_state") is None:
+        st.error("Game state is not initialized. Please start a new game.")
+    else:
         msg = process_sell_long(st.session_state["game_state"], int(sell_long))
         st.sidebar.success(msg)
 
 if short_button:
-    if st.session_state["game_state"]:
+    if st.session_state.get("game_state") is None:
+        st.error("Game state is not initialized. Please start a new game.")
+    else:
         msg = process_short(st.session_state["game_state"], int(short_shares))
         st.sidebar.success(msg)
 
 if cover_button:
-    if st.session_state["game_state"]:
+    if st.session_state.get("game_state") is None:
+        st.error("Game state is not initialized. Please start a new game.")
+    else:
         msg = process_cover(st.session_state["game_state"], int(cover_shares))
         st.sidebar.success(msg)
 
@@ -525,7 +545,7 @@ if cover_button:
 # Page Display
 # -----------------
 if st.session_state["page"] == "Game":
-    if st.session_state["game_state"]:
+    if st.session_state.get("game_state"):
         gs = st.session_state["game_state"]
         st.write("**Stock:** Hidden")
         st.write(f"**Current Candle Index:** {gs['current_index']} / {len(gs['df'])}")
@@ -549,11 +569,12 @@ if st.session_state["page"] == "Game":
         if gs["step_count"] >= gs["max_steps"]:
             st.error("Game Over: Maximum candle clicks reached.")
         
-        # Enhanced interactivity configuration for Plotly chart
+        # Configure interactivity options for Plotly chart (touch friendly)
         config = {
             'scrollZoom': True,
             'displayModeBar': True,
-            'displaylogo': False
+            'displaylogo': False,
+            'responsive': True
         }
         fig = plot_chart_interactive_dark(gs)
         fig.update_layout(dragmode="pan")
@@ -594,7 +615,6 @@ if st.session_state["page"] == "Game":
                 leaderboard = leaderboard.drop(columns=["timestamp", "RankInt"])
                 st.dataframe(leaderboard)
         
-        # EDUCATIONAL EXPANDER: VPA & Candlestick Patterns
         with st.expander("Learn About VPA & Candlestick Patterns"):
             st.markdown("""
             ### Volume Price Analysis (VPA)
@@ -611,7 +631,7 @@ if st.session_state["page"] == "Game":
             - **Engulfing:** A candle that completely engulfs the previous candle's body, signaling a strong reversal.
             
             **How to Use This Information:**  
-            Observe the candlestick shapes and volume bars (green for up, red for down) on the chart. Patterns like a **hammer on high volume** or a **shooting star on high volume** may indicate upcoming reversals.
+            Observe the candlestick shapes and volume bars on the chart. Patterns like a **hammer on high volume** or a **shooting star on high volume** may indicate upcoming reversals.
             """)
     else:
         st.info("Click 'Start New Game' in the sidebar to begin.")
