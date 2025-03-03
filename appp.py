@@ -338,7 +338,7 @@ def plot_chart_interactive_dark(game_state: dict) -> go.Figure:
     fig.add_hline(y=20, line_dash="dash", line_color="green", row=3, col=1)
     fig.update_yaxes(range=[0, 100], row=3, col=1)
     
-    # Enhanced interactivity: enable scroll zoom and pan mode
+    # Enhanced interactivity: enable scroll zoom and set drag mode to pan
     fig.update_layout(
         template="plotly_dark",
         xaxis_rangeslider_visible=False,
@@ -416,7 +416,7 @@ def process_short(game_state: dict, shares: int):
         return "Error: No current price."
     if game_state["shares"] > 0:
         return "You hold a long position. Sell long shares first before shorting."
-    # When shorting, do not update balance
+    # When shorting, we do not update balance so that covering with no price change yields zero profit.
     if game_state["shares"] == 0:
         game_state["shares"] = -shares
         game_state["avg_cost"] = price
@@ -445,12 +445,10 @@ def process_cover(game_state: dict, shares: int):
         return "No short position to cover."
     if shares > abs(game_state["shares"]):
         return "Cannot cover more than your short position."
-    # Calculate profit with tolerance to avoid rounding issues
-    diff = game_state["avg_cost"] - price
-    profit = 0 if abs(diff) < 1e-6 else round(diff * shares, 2)
-    # Update balance only by profit
+    # Profit from covering = (short entry price - cover price) * shares
+    profit = round((game_state["avg_cost"] - price) * shares, 2)
     game_state["balance"] += profit
-    game_state["shares"] += shares  # moving towards 0
+    game_state["shares"] += shares  # moving toward 0
     if game_state["shares"] == 0:
         game_state["avg_cost"] = 0.0
     msg = f"Covered {shares} shares at ${price:.2f}, profit: ${profit:.2f}."
@@ -491,22 +489,18 @@ if start_button:
     st.session_state["trade_history"] = []
 
 if next_candle_button:
-    if st.session_state.get("game_state") is None:
-        st.error("Game state is not initialized. Please start a new game.")
-    elif st.session_state["game_state"].get("df") is None:
-        st.error("Game state is missing data. Please restart the game.")
-    else:
+    if st.session_state["game_state"]:
         df = st.session_state["game_state"]["df"]
-        if df.empty:
-            st.error("The data is empty. Please restart the game.")
-        else:
-            max_index = len(df)
-            st.session_state["game_state"]["current_index"] = min(
-                st.session_state["game_state"]["current_index"] + 1, max_index
-            )
-            st.session_state["game_state"]["step_count"] += 1
+        max_index = len(df)
+        st.session_state["game_state"]["current_index"] = min(
+            st.session_state["game_state"]["current_index"] + 1, max_index
+        )
+        st.session_state["game_state"]["step_count"] += 1
+        try:
             st.experimental_rerun()
-
+        except AttributeError:
+            st.write("Page will refresh on next interaction.")
+        
 if buy_long_button:
     if st.session_state["game_state"]:
         msg = process_buy_long(st.session_state["game_state"], int(buy_long))
@@ -555,14 +549,14 @@ if st.session_state["page"] == "Game":
         if gs["step_count"] >= gs["max_steps"]:
             st.error("Game Over: Maximum candle clicks reached.")
         
-        # Configure interactivity options for Plotly
+        # Enhanced interactivity configuration for Plotly chart
         config = {
             'scrollZoom': True,
             'displayModeBar': True,
             'displaylogo': False
         }
         fig = plot_chart_interactive_dark(gs)
-        fig.update_layout(dragmode="pan")  # Set default drag mode to pan
+        fig.update_layout(dragmode="pan")
         st.plotly_chart(fig, use_container_width=True, config=config)
         
         if st.session_state["trade_history"]:
